@@ -1120,7 +1120,8 @@ public class DBInterface {
 
     }
 
-    public Map<String,String> getResourceTotal2() {
+    //NMS this method doesn't seem to be in use anymore
+    /*public Map<String,String> getResourceTotal2() {
         Map<String,String> resourceTotal = null;
         long cpu_core_count = 0;
         long memoryAvailable = 0;
@@ -1133,29 +1134,6 @@ public class DBInterface {
 
         try
         {
-            /*
-            logger.info("CODY START");
-            List<String> sysInfoEdgeList = gdb.getIsAssignedEdgeIds("sysinfo_resource", "sysinfo_inode");
-            for(String edgeID : sysInfoEdgeList) {
-                logger.info("ID = " + edgeID);
-                //logger.info(gdb.getIsAssignedParam(String edge_id,String param_name)
-                String region = gdb.getIsAssignedParam(edgeID,"region");
-                String agent = gdb.getIsAssignedParam(edgeID,"agent");
-                String pluginID = gdb.getIsAssignedParam(edgeID,"agentcontroller");
-
-                Map<String,String> edgeParams = gdb.getIsAssignedParams(edgeID);
-                for (Map.Entry<String, String> entry : edgeParams.entrySet()) {
-                    String key = entry.getKey();
-                    String value = entry.getValue();
-                    logger.info("key=" + key + " value=" + value);
-                }
-
-                logger.info(region + " " + agent + " " + pluginID);
-            }
-
-            logger.info("CODY END");
-            */
-
             //public List<String> getIsAssignedEdgeIds(String resource_id, String inode_id)
 
             resourceTotal = new HashMap<>();
@@ -1196,20 +1174,7 @@ public class DBInterface {
                                                     diskAvailable += Long.parseLong(edgeParams.get("fs-" + fskey[0] + "-available"));
                                                     diskTotal += Long.parseLong(edgeParams.get("fs-" + fskey[0] + "-total"));
                                                 }
-                                                /*
-                                                System.out.println("region=" + region + " agent=" + agent);
-                                                String agent_path = region + "_" + agent;
-                                                String agentConfigparams = gdb.getNodeParam(region, agent, null, "configparams");
-                                                Map<String, String> aMap = paramStringToMap(agentConfigparams);
-                                                //String resourceKey = aMap.get("platform") + "_" + aMap.get("environment") + "_" + aMap.get("location");
 
-                                                for (Map.Entry<String, String> entry : pMap.entrySet()) {
-                                                    String key = entry.getKey();
-                                                    String value = entry.getValue();
-                                                    System.out.println("\t" + key + ":" + value);
-                                                }
-                                                isRecorded = true;
-                                                */
                                             }
                                         }
                                     }
@@ -1248,6 +1213,7 @@ public class DBInterface {
 
         return resourceTotal;
     }
+    */
 
     public Map<String, NodeStatusType> getEdgeHealthStatus(String region, String agent, String plugin) {
 
