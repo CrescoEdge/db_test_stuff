@@ -62,10 +62,10 @@ public class PluginBuilder {
 
         List<Map<String,String>> pluginFiles = new ArrayList<Map<String, String>>();
         Map<String, String> pluginMap = new HashMap<>();
-        pluginMap.put("pluginname", this.getPluginID());
-        pluginMap.put("jarfile", "fake.jar");
-        pluginMap.put("md5", "DefinitelyRealMD5");
-        pluginMap.put("version", "NO_VERSION");
+        pluginMap.put("pluginname", this.pluginConfig.getStringParam("pluginname"));
+        pluginMap.put("jarfile", this.pluginConfig.getStringParam("jarfile"));
+        pluginMap.put("md5", this.pluginConfig.getStringParam("md5"));
+        pluginMap.put("version", this.pluginConfig.getStringParam("version"));
         pluginFiles.add(pluginMap);
         repoMap.put("plugins",pluginFiles);
 
@@ -94,7 +94,7 @@ public class PluginBuilder {
     }
 
     public String getPluginID() {
-        return pluginConfig.getStringParam("pluginid");
+        return pluginConfig.getStringParam("pluginID");
     }
 }
 

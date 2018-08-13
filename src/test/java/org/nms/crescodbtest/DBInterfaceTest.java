@@ -6,6 +6,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import com.orientechnologies.orient.core.db.document.ODatabaseDocumentTx;
+import io.cresco.agent.controller.globalscheduler.pNode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
@@ -120,19 +121,24 @@ class DBInterfaceTest {
     }
 
 
-    @org.junit.jupiter.api.Test
     @RepeatedTest(10)
     void getPluginListRepo_test() {
         assertEquals("{\"plugins\":[{\"jarfile\":\"fake.jar\",\"version\":\"NO_VERSION\",\"md5\":\"DefinitelyR"+
                 "ealMD5\"}]}",ce.getGDB().getPluginListRepo());
     }
 
-    //NMS This test always fails because the results change each execution. In its current form it isn't amenable to testing like this
-    //I need to study how this function is used. It appears to be broken
-    @org.junit.jupiter.api.Test
+
     @RepeatedTest(10)
     void getPluginListRepoSet_test() {
-        assertEquals("{null=[io.cresco.agent.controller.globalscheduler.pNode@a8c1f44]}",ce.getGDB().getPluginListRepoSet());
+        /*Note: The function 'getPluginListRepoSet' only seems to use the database to figure out where the repo plugin lives (should be global
+        * controller). Thus we may need a test that checks the lower-level function the aforementioned one depends on*/
+        Map<String,List<pNode>> plist = ce.getGDB().getPluginListRepoSet();
+        for(pNode aplugin : plist.get("some_plugin_name")){
+            assertTrue(
+                    aplugin.isEqual("some_plugin_name","some_plugin.jar","65388b8d8bf462df2cd3910bcada4110","9.99.999")
+            );
+        }
+
     }
 /*
     @org.junit.jupiter.api.Test

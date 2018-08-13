@@ -35,8 +35,11 @@ public class CrescoHelpers {
 
     public static Map<String,Object> getMockPluginConfig(Map<String,Object> GDBConfigMap) {
         Map<String,Object> testConfig = new HashMap<>();
-        testConfig.put("plugin_conf_1","confval_1");
-        testConfig.put("plugin_conf_2","confval_2");
+        testConfig.put("pluginname","some_plugin_name");
+        testConfig.put("jarfile","some_plugin.jar");
+        testConfig.put("md5","65388b8d8bf462df2cd3910bcada4110"); //output of md5sum command with "FAKE" as arg
+        testConfig.put("version","9.99.999");
+
         if(GDBConfigMap != null){
             testConfig.putAll(GDBConfigMap);
         }
@@ -48,7 +51,7 @@ public class CrescoHelpers {
         PluginBuilder mypb = new PluginBuilder(agent,region,baseClassName,configMap);
         PluginAdmin mypluginAdmin = new PluginAdmin();
         //Not having any plugins causes problems in the form of a NullPointerException, so add a bogus plugin
-        mypluginAdmin.addPlugin("some_plugin","some_plugin.jar",configMap);
+        mypluginAdmin.addPlugin("some_plugin_name","some_plugin.jar",configMap);
         ControllerEngine new_ce  = new testhelpers.ControllerEngine(mypb,mypluginAdmin);
         DBInterface freshGDB = new DBInterface(new_ce,db_to_use);
         new_ce.setGDB(freshGDB);
