@@ -2308,7 +2308,7 @@ public class DBBaseFunctions {
         return uncompressedString;
     }
 
-    public byte[] stringCompress(String str) {
+    public byte[]  stringCompress(String str) {
         byte[] dataToCompress = str.getBytes(StandardCharsets.UTF_8);
         byte[] compressedData = null;
         try
