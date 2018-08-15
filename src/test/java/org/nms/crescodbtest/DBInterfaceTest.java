@@ -1,23 +1,28 @@
 package org.nms.crescodbtest;
 
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.*;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import com.orientechnologies.orient.core.db.document.ODatabaseDocumentTx;
-import com.sun.org.apache.xpath.internal.Arg;
 import io.cresco.agent.controller.globalscheduler.pNode;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.ValueSource;
 import testhelpers.ControllerEngine;
 import testhelpers.CrescoHelpers;
 
 import testhelpers.GDBConf;
 import testhelpers.OrientHelpers;
+
+import javax.xml.bind.DatatypeConverter;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -32,6 +37,7 @@ class DBInterfaceTest {
     //private final String local_db_path = "/home/nima/bin/orientdb-2.2.36/databases";
     //private final String db_export_file_path = "/home/nima/bin/orientdb-2.2.36/backup_for_testing.zip";
     private final String db_export_file_path = "/home/nima/code/IdeaProjects/cresco_db_rewrite/src/test/resources/global_region_agent.gz";
+    private final String regional_db_export_file_path = "/home/nima/code/IdeaProjects/cresco_db_rewrite/src/test/resources/cresco_regional.gz";
 
     private ODatabaseDocumentTx model_db;
     private ODatabaseDocumentTx test_db;
@@ -39,10 +45,11 @@ class DBInterfaceTest {
     //Note: The following should match what's in the test database *exactly*
     //At this time the configs are set up so that the agent name will change on a subsequent invocation.
     //If I make changes to the test db, these need to be rechecked!
-    private static final Set<String> agents = new HashSet<>(Arrays.asList("agent_smith","gc_agent","rc_agent"));
-    private static final Set<String> regions = new HashSet<>(Arrays.asList("global_region","different_test_region"));
-    private static final Set<String> pluginids = new HashSet<>(Arrays.asList("plugin/0","plugin/1","plugin/2"));
-    private static final Set<String> jarfiles = new HashSet<>(Arrays.asList("repo-1.0-SNAPSHOT.jar","sysinfo-1.0-SNAPSHOT.jar","dashboard-1.0-SNAPSHOT.jar"));
+    private static final Set<String> agents = new HashSet<>(Arrays.asList("agent_smith","gc_agent","rc_agent","",null,"non_existent"));
+    private static final Set<String> regions = new HashSet<>(Arrays.asList("global_region","different_test_region","",null,"non_existent"));
+    private static final Set<String> pluginids = new HashSet<>(Arrays.asList("plugin/0","plugin/1","plugin/2","",null,"non_existent"));
+    private static final Set<String> jarfiles = new HashSet<>(Arrays.asList("repo-1.0-SNAPSHOT.jar","sysinfo-1.0-SNAPSHOT.jar","dashboard-1.0-SNAPSHOT.jar","",null,"non_existent"));
+
     private static final int REPEAT_COUNT = 5;
 
     static List<Arguments> getAgentRegionPluginIdTriples(){
@@ -55,6 +62,30 @@ class DBInterfaceTest {
             }
         }
         return ret;
+    }
+
+    static Stream<Arguments> getRegionAgentPairs(){
+        return regions.stream().flatMap( (r)->
+                        agents.stream().map( (a) ->
+                                Arguments.of(r,a)
+                        )
+                );
+    }
+
+    Stream<String> getRegionParameterSet(){
+        return regions.stream();
+    }
+
+    Stream<String> getAgents(){
+        return agents.stream();
+    }
+
+    Stream<String> getPluginIds(){
+        return pluginids.stream();
+    }
+
+    Stream<String> getJarfiles(){
+        return jarfiles.stream();
     }
 
     @org.junit.jupiter.api.BeforeAll
@@ -89,29 +120,71 @@ class DBInterfaceTest {
         assertEquals("value1",resultMap.get("param1"));
         assertEquals("value2",resultMap.get("param2"));
     }
-/*
-    @org.junit.jupiter.api.Test
-    void getResourceTotal() {
 
+    @Test
+    /**
+     * It seems the test DB I created does not have any records for this function to return. It throws an exception
+     * because of a null value (see in DBInterface.java in getResourceTotal() the call edgeParams.get("cpu-logical-count")
+     * I need to find out why there are no records. Based on the code, there should at least be the keys I check for in
+     * the map returned.
+     */
+    void getResourceTotal() {
+        Map<String,String> resourceTotals = ce.getGDB().getResourceTotal();
+        assertNotNull(resourceTotals.get("regions"));
+        assertNotNull(resourceTotals.get("agents"));
+        assertNotNull(resourceTotals.get("plugins"));
+        assertNotNull(resourceTotals.get("cpu_core_count"));
+        assertNotNull(resourceTotals.get("mem_available"));
+        assertNotNull(resourceTotals.get("mem_total"));
+        assertNotNull(resourceTotals.get("disk_available"));
+        assertNotNull(resourceTotals.get("disk_total"));
     }
-*/
+
     @RepeatedTest(REPEAT_COUNT)
     void getRegionList() {
         String desired_output = "{\"regions\":[{\"name\":\"different_test_region\",\"agents\":\"2\"},{\"name\":\"globa"+
                 "l_region\",\"agents\":\"1\"}]}";
         assertEquals(desired_output, ce.getGDB().getRegionList());
     }
-/*
+
     @org.junit.jupiter.api.Test
     void submitDBImport() {
+        String expected_regions = "{\"regions\":[{\"name\":\"different_test_region\",\"agents\":\"2\"},{\"name\":\""+
+                "global_region\",\"agents\":\"1\"},{\"name\":\"yet_another_test_region\",\"agents\":\"1\"}]}";
+        String expected_agents = "{\"agents\":[{\"environment\":\"environment\",\"plugins\":\"1\",\"name\":\"another_r"+
+                "c\",\"location\":\"location\",\"region\":\"yet_another_test_region\",\"platform\":\"platform\"}]}";
+        String expected_plugins = "{\"plugins\":[{\"agent\":\"another_rc\",\"name\":\"plugin/0\",\"region\":\"yet_anot"+
+                "her_test_region\"}]}";
+        try {
+            byte[] importData = Files.readAllBytes(Paths.get(regional_db_export_file_path));
+            ce.getGDB().submitDBImport(DatatypeConverter.printBase64Binary(importData));
+            Thread.sleep(5000);//Import runs in another thread so we need to give it time to work
+            String newRegionList = ce.getGDB().getRegionList();
+            assertEquals(expected_regions,newRegionList);
+            String newAgentList = ce.getGDB().getAgentList("yet_another_test_region");
+            assertEquals(expected_agents,newAgentList);
+            String newPluginList = ce.getGDB().getPluginList("yet_another_test_region","another_rc");
+            assertEquals(expected_plugins,newPluginList);
+        }
+        catch(FileNotFoundException ex) {
+            fail(String.format("Could not find regional db export file at %s",regional_db_export_file_path),ex);
+        }
+        catch(IOException ex) {
+            fail(String.format("Could not read regional db export file at %s",regional_db_export_file_path),ex);
+        }
+        catch(InterruptedException ex) {
+            System.out.println("Threadus Interruptus");
+        }
     }
-*/
-    Set<String> getRegionParameterSet(){
-        //Add a region value that is almost certainly not in the database
-        Set<String> ret = new HashSet<>(Arrays.asList((Long.toString(System.currentTimeMillis()))));
-        ret.addAll(regions);
-        return ret;
-    }
+
+
+
+    /**
+     * Calling this with a null argument returns a different result from a blank argument or one not in the db. Is that
+     * really the desired behavior? This test was written so it would pass if the null, blank, and nonexistent cases all
+     * produce the same result.
+     * @param region
+     */
     @ParameterizedTest
     @MethodSource("getRegionParameterSet")
     void getAgentList_test(String region) {
@@ -124,11 +197,11 @@ class DBInterfaceTest {
                 ",\"location\":\"location\",\"region\":\"different_test_region\",\""+
                 "platform\":\"platform\"},{\"environment\":\"environment\",\"plugins\":\"1\",\"name\":\"rc_agent\",\"l"+
                 "ocation\":\"location\",\"region\":\"different_test_region\",\"platform\":\"platform\"}]}");
-        if(regions.contains(region)) {
-            assertEquals(expected_output.get(region), ce.getGDB().getAgentList(region));
-        } else {
+        if(region == null || region.equals("")){
             assertEquals("{\"agents\":[]}",ce.getGDB().getAgentList(region));
         }
+        assertEquals(expected_output.get(region), ce.getGDB().getAgentList(region));
+
     }
 
 
@@ -165,7 +238,7 @@ class DBInterfaceTest {
     }
 
     /**
-     *First, please note that I intentionally left the test for args ("pluginname",null) failing. I think we should add
+     *First, please note that I intentionally left the test for null args e.g. ("pluginname",null) failing. I think we should add
      * something in the new implementation to avoid the NulLPointerException.
      *We may not want this thing to work the same way after the rewrite. It seems odd that we should
      *get a different result just for null input. Also, this function will never return useful results for
@@ -227,6 +300,7 @@ class DBInterfaceTest {
                     case "dashboard-1.0-SNAPSHOT.jar":assertEquals(dashboard_expected,actual); break;
                 }
             break;
+            default: assertEquals("{\"plugins\":[]}",actual);
         }
     }
 
@@ -237,32 +311,28 @@ class DBInterfaceTest {
           where indexes[name] like 'pNode%'
         */
         List<Arguments> ret  = new ArrayList<>();
-
-        //indexInfoMap.put("nodePath",Arrays.asList(new String[]{""}));
-        //indexInfoMap.put("jarfile",Arrays.asList(new String[]{""}));
-        ret.add(Arguments.of("pluginname",null));
-        for(String pname : Arrays.asList(new String[]{"io.cresco.dashboard","io.cresco.sysinfo","io.cresco.repo"})){
+        for(String pname : Arrays.asList(new String[]{"io.cresco.dashboard","io.cresco.sysinfo","io.cresco.repo","",null})){
             ret.add(Arguments.of("pluginname",pname));
         }
-        ret.add(Arguments.of("nodePath",null));
+
         for(Arguments argset : getAgentRegionPluginIdTriples()){
             ret.add(Arguments.of("nodePath",String.format("[\"%s\",\"%s\",\"%s\"]",argset.get())));
-            /*Stream.of(argset.get())
-                    .map((args)-> ))
-                    .collect(Collectors.to*/
+
         }
-        ret.add(Arguments.of("jarfile",null));
         for(String jar : jarfiles){
             ret.add(Arguments.of("jarfile",jar));
         }
-        //new String[]{"pluginname","nodePath","jarfile"})
+        ret.add(Arguments.of(null,null));
         return ret;
     }
-/*
-    @org.junit.jupiter.api.Test
-    void getPluginList() {
-    }
 
+    @ParameterizedTest
+    @MethodSource("getRegionAgentPairs")
+    void getPluginList(String region, String agent) {
+        String actual = ce.getGDB().getPluginList(region,agent);
+        System.out.println(actual);
+    }
+/*
     @org.junit.jupiter.api.Test
     void getPluginInfo() {
     }
