@@ -3,10 +3,11 @@ package org.nms.crescodbtest;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.function.BiFunction;
 import java.util.stream.Stream;
 
 import javax.xml.bind.DatatypeConverter;
@@ -17,7 +18,6 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.json.simple.*;
 import org.json.simple.parser.*;
 import testhelpers.ControllerEngine;
 import testhelpers.CrescoHelpers;
@@ -31,7 +31,8 @@ import static org.junit.jupiter.api.Assertions.*;
 @org.junit.jupiter.api.TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class DBInterfaceTest {
     private ControllerEngine ce;
-    private DBManager dbMan;
+    private DBInterface gdb;
+
 
     private final GDBConf testingConf = new GDBConf("test_runner","test","localhost","cresco_test");
     //private final GDBConf adminConf = new GDBConf("root","root","localhost","cresco_test");
@@ -56,7 +57,7 @@ class DBInterfaceTest {
 
     private static final int REPEAT_COUNT = 5;
 
-    static List<Arguments> getAgentRegionPluginIdTriples(){
+    static List<Arguments> getRegionAgentPluginidTriples(){
         List<Arguments> ret = new ArrayList<>();
         for(String region:regions){
             for(String agent:agents){
@@ -76,7 +77,7 @@ class DBInterfaceTest {
                 );
     }
 
-    Stream<String> getRegionParameterSet(){
+    Stream<String> getRegions(){
         return regions.stream();
     }
 
@@ -103,7 +104,7 @@ class DBInterfaceTest {
             ret.add(Arguments.of("pluginname",pname));
         }
 
-        for(Arguments argset : getAgentRegionPluginIdTriples()){
+        for(Arguments argset : getRegionAgentPluginidTriples()){
             ret.add(Arguments.of("nodePath",String.format("[\"%s\",\"%s\",\"%s\"]",argset.get())));
 
         }
@@ -146,6 +147,7 @@ class DBInterfaceTest {
         test_db = model_db.copy();
         ce = CrescoHelpers.getControllerEngine("test_controller_agent","test_controller_region","DBInterfaceTest",
                 pluginConf,test_db);
+        gdb = ce.getGDB();
     }
 
    /* @AfterEach
@@ -155,9 +157,9 @@ class DBInterfaceTest {
     }*/
 
     @RepeatedTest(REPEAT_COUNT)
-    void paramStringToMap() {
+    void paramStringToMap_test() {
         String testParams="param1=value1,param2=value2";
-        Map<String,String> resultMap = ce.getGDB().paramStringToMap(testParams);
+        Map<String,String> resultMap = gdb.paramStringToMap(testParams);
         assertEquals("value1",resultMap.get("param1"));
         assertEquals("value2",resultMap.get("param2"));
     }
@@ -170,8 +172,8 @@ class DBInterfaceTest {
      * the map returned.
      */
     @Test
-    void getResourceTotal() {
-        Map<String,String> resourceTotals = ce.getGDB().getResourceTotal();
+    void getResourceTotal_test() {
+        Map<String,String> resourceTotals = gdb.getResourceTotal();
         assertNotNull(resourceTotals.get("regions"));
         assertNotNull(resourceTotals.get("agents"));
         assertNotNull(resourceTotals.get("plugins"));
@@ -183,10 +185,10 @@ class DBInterfaceTest {
     }
 
     @RepeatedTest(REPEAT_COUNT)
-    void getRegionList() {
+    void getRegionList_test() {
         String desired_output = "{\"regions\":[{\"name\":\"different_test_region\",\"agents\":\"2\"},{\"name\":\"globa"+
                 "l_region\",\"agents\":\"1\"}]}";
-        assertEquals(desired_output, ce.getGDB().getRegionList());
+        assertEquals(desired_output, gdb.getRegionList());
     }
 
     /**
@@ -204,13 +206,13 @@ class DBInterfaceTest {
                 "her_test_region\"}]}";
         try {
             byte[] importData = Files.readAllBytes(Paths.get(regional_db_export_file_path));
-            ce.getGDB().submitDBImport(DatatypeConverter.printBase64Binary(importData));
+            gdb.submitDBImport(DatatypeConverter.printBase64Binary(importData));
             Thread.sleep(5000);//Import runs in another thread so we need to give it time to work
-            String newRegionList = ce.getGDB().getRegionList();
+            String newRegionList = gdb.getRegionList();
             assertEquals(expected_regions,newRegionList);
-            String newAgentList = ce.getGDB().getAgentList("yet_another_test_region");
+            String newAgentList = gdb.getAgentList("yet_another_test_region");
             assertEquals(expected_agents,newAgentList);
-            String newPluginList = ce.getGDB().getPluginList("yet_another_test_region","another_rc");
+            String newPluginList = gdb.getPluginList("yet_another_test_region","another_rc");
             assertEquals(expected_plugins,newPluginList);
         }
         catch(FileNotFoundException ex) {
@@ -231,7 +233,7 @@ class DBInterfaceTest {
      * @param region
      */
     @ParameterizedTest
-    @MethodSource("getRegionParameterSet")
+    @MethodSource("getRegions")
     void getAgentList_test(String region) {
         Map<String,String> expected_output = new HashMap<>();
         expected_output.put("global_region"
@@ -243,9 +245,9 @@ class DBInterfaceTest {
                 "platform\":\"platform\"},{\"environment\":\"environment\",\"plugins\":\"1\",\"name\":\"rc_agent\",\"l"+
                 "ocation\":\"location\",\"region\":\"different_test_region\",\"platform\":\"platform\"}]}");
         if(region == null || region.equals("")){
-            assertEquals("{\"agents\":[]}",ce.getGDB().getAgentList(region));
+            assertEquals("{\"agents\":[]}",gdb.getAgentList(region));
         }
-        assertEquals(expected_output.get(region), ce.getGDB().getAgentList(region));
+        assertEquals(expected_output.get(region), gdb.getAgentList(region));
 
     }
 
@@ -256,7 +258,7 @@ class DBInterfaceTest {
     @RepeatedTest(REPEAT_COUNT)
     void getPluginListRepo_test() {
         assertEquals("{\"plugins\":[{\"jarfile\":\"fake.jar\",\"version\":\"NO_VERSION\",\"md5\":\"DefinitelyR"+
-                "ealMD5\"}]}",ce.getGDB().getPluginListRepo());
+                "ealMD5\"}]}",gdb.getPluginListRepo());
     }
 
     /**
@@ -265,7 +267,7 @@ class DBInterfaceTest {
      */
     @RepeatedTest(REPEAT_COUNT)
     void getPluginListRepoSet_test() {
-        Map<String,List<pNode>> plist = ce.getGDB().getPluginListRepoSet();
+        Map<String,List<pNode>> plist = gdb.getPluginListRepoSet();
         for(pNode aplugin : plist.get("some_plugin_name")){
             assertTrue(
                     aplugin.isEqual("some_plugin_name","some_plugin.jar","65388b8d8bf462df2cd3910bcada4110","9.99.999")
@@ -281,7 +283,7 @@ class DBInterfaceTest {
     void getPluginListRepoInventory_test() {
         String expected = "{\"server\":[],\"plugins\":[{\"pluginname\":\"some_plugin_name\",\"jarfile\":\"some_plugin."+
                 "jar\",\"version\":\"9.99.999\",\"md5\":\"65388b8d8bf462df2cd3910bcada4110\"}]}";
-        List<String> repoList = ce.getGDB().getPluginListRepoInventory();
+        List<String> repoList = gdb.getPluginListRepoInventory();
         for(String res : repoList){
             assertEquals(expected,res);
         }
@@ -301,8 +303,8 @@ class DBInterfaceTest {
      */
     @ParameterizedTest
     @MethodSource("getPluginTypeIdValuePairs")
-    void getPluginListByType(String typeId,String typeVal) {
-        String actual = ce.getGDB().getPluginListByType(typeId,typeVal);
+    void getPluginListByType_test(String typeId,String typeVal) {
+        String actual = gdb.getPluginListByType(typeId,typeVal);
         String sysinfo_expected = "{\"plugins\":[{\"agent\":\"gc_agent\",\"status_code\":\"10\",\"agentcon"+
                 "troller\":\"plugin/2\",\"pluginname\":\"io.cresco.sysinfo\",\"status_dest\":\"Plugin "+
                 "Active\",\"jarfile\":\"sysinfo-1.0-SNAPSHOT.jar\",\"pluginid\":\"plugin/2\",\"isactiv"+
@@ -367,8 +369,8 @@ class DBInterfaceTest {
      */
     @ParameterizedTest
     @MethodSource("getRegionAgentPairs")
-    void getPluginList(String region, String agent) throws ParseException {
-        String actual = ce.getGDB().getPluginList(region,agent);
+    void getPluginList_test(String region, String agent) throws ParseException {
+        String actual = gdb.getPluginList(region,agent);
         String allplugins = "{\"plugins\":[{\"agent\":\"agent_smith\",\"name\":\"plugin/0\",\"region\":\"different_test_region\"},{\"agent\":\"rc_agent\",\"name\":\"plugin/0\",\"region\":\"different_test_region\"},{\"agent\":\"gc_agent\",\"name\":\"plugin/0\",\"region\":\"global_region\"},{\"agent\":\"gc_agent\",\"name\":\"plugin/1\",\"region\":\"global_region\"},{\"agent\":\"gc_agent\",\"name\":\"plugin/2\",\"region\":\"global_region\"}]}";
         String global_region_plugins = "{\"plugins\":[{\"agent\":\"gc_agent\",\"name\":\"plugin/0\",\"region\":\"global_region\"},{\"agent\":\"gc_agent\",\"name\":\"plugin/1\",\"region\":\"global_region\"},{\"agent\":\"gc_agent\",\"name\":\"plugin/2\",\"region\":\"global_region\"}]}";
         String diff_region_plugins = "{\"plugins\":[{\"agent\":\"agent_smith\",\"name\":\"plugin/0\",\"region\":\"different_test_region\"},{\"agent\":\"rc_agent\",\"name\":\"plugin/0\",\"region\":\"different_test_region\"}]}";
@@ -395,9 +397,9 @@ class DBInterfaceTest {
      * @param pluginid
      */
     @ParameterizedTest
-    @MethodSource("getAgentRegionPluginIdTriples")
-    void getPluginInfo(String region, String agent, String pluginid) {
-        String actual = ce.getGDB().getPluginInfo(region,agent,pluginid);
+    @MethodSource("getRegionAgentPluginidTriples")
+    void getPluginInfo_test(String region, String agent, String pluginid) {
+        String actual = gdb.getPluginInfo(region,agent,pluginid);
         if(region_contents.containsKey(region) && region_contents.get(region).containsKey(agent)){
             if(region.equals("global_region")){
                 //Test db only has single agent in region "global_region". I already check the agent above so I don't
@@ -423,19 +425,62 @@ class DBInterfaceTest {
 
     }
 
-    /*
-    @org.junit.jupiter.api.Test
-    void getIsAttachedMetrics() {
+    /**
+     * This never returns any results but seems like it should given the inputs. This is similar to
+     * {@link #getResourceTotal_test()}.
+     * @param region
+     * @param agent
+     * @param pluginid
+     */
+    @ParameterizedTest
+    @MethodSource("getRegionAgentPluginidTriples")
+    void getIsAttachedMetrics_test(String region, String agent, String pluginid) {
+        String actual = gdb.getIsAttachedMetrics(region, agent, pluginid);
+        assertNotEquals("[]",actual);
     }
 
-    @org.junit.jupiter.api.Test
-    void getNetResourceInfo() {
+    /**
+     * This returns null. See {@link #getIsAttachedMetrics_test(String, String, String)}
+     * and {@link #getResourceTotal_test()}
+     */
+    @Test
+    void getNetResourceInfo_test() {
+        String actual = gdb.getNetResourceInfo();
+        assertNotNull(actual);
     }
 
-    @org.junit.jupiter.api.Test
-    void getResourceInfo() {
+    /**
+     * getResourceInfo() does different things if one or both args is null. Private methods in DBInterface are called
+     * depending on how many arguments are null. Also, the output of this function is a Base64 encoded string. We may
+     * want to consider using different types for encoded+compressed string data so it's clear that regular String ops
+     * might not work by themselves. We could perhaps pull some methods into that class from other places like
+     * stringCompress from DBBaseFunctions.
+     * TODO: It looks like this might always return null, but I'm not sure about that. I need to see if passing an empty
+     * map object like in the DBInterface code to gson does something different that just passing a null reference. Maybe
+     * it produces an empty JSON tree instead?
+     * @param region
+     * @param agent
+     */
+    @ParameterizedTest
+    @MethodSource("getRegionAgentPairs")
+    void getResourceInfo_test(String region, String agent) {
+        String actual = gdb.getResourceInfo(region, agent);
+        System.out.println(
+                gdb.gdb.stringUncompress(
+                    new String(DatatypeConverter.parseBase64Binary(actual), StandardCharsets.UTF_8)
+                )
+        );
+        System.out.println(DatatypeConverter.printBase64Binary(gdb.gdb.stringCompress("null")));
+        System.out.println(actual);
+        if((region != null) && (agent != null)) {
+            //assertEquals(gdb.getResourceInfo(region,agent),gdb.getAgentResourceInfo(region,agent));
+        } else if (region != null) {
+            //gdb.getRegionResourceInfo(region);
+        } else {
+            //gdb.getGlobalResourceInfo();
+        }
     }
-
+/*
     @org.junit.jupiter.api.Test
     void getGPipeline() {
     }
