@@ -12,8 +12,11 @@ import java.util.stream.Stream;
 
 import javax.xml.bind.DatatypeConverter;
 
+import com.jayway.jsonpath.JsonPath;
 import com.orientechnologies.orient.core.db.document.ODatabaseDocumentTx;
 import io.cresco.agent.controller.globalscheduler.pNode;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -32,7 +35,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class DBInterfaceTest {
     private ControllerEngine ce;
     private DBInterface gdb;
-
+    private JSONParser jp;
+    private final String NOT_FOUND = "This should return whatever we choose for \"not found\"";
 
     private final GDBConf testingConf = new GDBConf("test_runner","test","localhost","cresco_test");
     //private final GDBConf adminConf = new GDBConf("root","root","localhost","cresco_test");
@@ -53,6 +57,8 @@ class DBInterfaceTest {
     private static final Set<String> pluginids = new HashSet<>(Arrays.asList("plugin/0","plugin/1","plugin/2","",null));
     private static final Set<String> jarfiles = new HashSet<>(Arrays.asList("repo-1.0-SNAPSHOT.jar","sysinfo-1.0-SNAPSHOT.jar","dashboard-1.0-SNAPSHOT.jar","",null));
 
+    //The following is used in tests of several "resourceInfo" methods
+    private static final List<String> categories = Arrays.asList(new String[]{"disk_available", "disk_total", "mem_available", "cpu_core_count", "mem_total"});
     Map<String,Map<String,Map<String,String>>> region_contents = new HashMap<>();
 
     private static final int REPEAT_COUNT = 5;
@@ -132,6 +138,7 @@ class DBInterfaceTest {
         agents_in_global_region.put("gc_agent",plugins_gc);
         region_contents.put("global_region",agents_in_global_region);
 
+        jp = new JSONParser();
         try {
             model_db = OrientHelpers.getInMemoryTestDB(db_export_file_path).orElseThrow(() -> new Exception("Can't get test db"));
         }
@@ -411,17 +418,17 @@ class DBInterfaceTest {
                     break;
                     case "plugin/2":assertEquals("{\"pluginname\":\"io.cresco.sysinfo\",\"jarfile\":\"sysinfo-1.0-SNAPSHOT.jar\"}",actual);
                     break;
-                    default:fail("Returns "+actual);
+                    default:fail(NOT_FOUND);
                 }
             }
             if(region.equals("different_test_region")){
                 //Two agents in this region but each only has one plugin,io.cresco.sysinfo.
                 if(pluginid.equals("plugin/0")) assertEquals("{\"pluginname\":\"io.cresco.sysinfo\",\"jarfile\":\"sysinfo-1.0-SNAPSHOT.jar\"}"
                         ,actual);
-                else fail("Returns "+actual);
+                else fail(NOT_FOUND);
             }
         }
-        else fail("Returns "+actual);
+        else fail(NOT_FOUND);
 
     }
 
@@ -455,9 +462,6 @@ class DBInterfaceTest {
      * want to consider using different types for encoded+compressed string data so it's clear that regular String ops
      * might not work by themselves. We could perhaps pull some methods into that class from other places like
      * stringCompress from DBBaseFunctions.
-     * TODO: It looks like this might always return null, but I'm not sure about that. I need to see if passing an empty
-     * map object like in the DBInterface code to gson does something different that just passing a null reference. Maybe
-     * it produces an empty JSON tree instead?
      * @param region
      * @param agent
      */
@@ -465,21 +469,86 @@ class DBInterfaceTest {
     @MethodSource("getRegionAgentPairs")
     void getResourceInfo_test(String region, String agent) {
         String actual = gdb.getResourceInfo(region, agent);
-        System.out.println(
-                gdb.gdb.stringUncompress(
-                    new String(DatatypeConverter.parseBase64Binary(actual), StandardCharsets.UTF_8)
-                )
-        );
-        System.out.println(DatatypeConverter.printBase64Binary(gdb.gdb.stringCompress("null")));
         System.out.println(actual);
         if((region != null) && (agent != null)) {
-            //assertEquals(gdb.getResourceInfo(region,agent),gdb.getAgentResourceInfo(region,agent));
-        } else if (region != null) {
-            //gdb.getRegionResourceInfo(region);
+            assertEquals(gdb.getAgentResourceInfo(region, agent),actual);
+        } else if (region != null && (agent == null)) {
+            assertEquals(gdb.getRegionResourceInfo(region),actual);
+        } else if (region == null && agent != null) {
+            fail("Need to decide what \"not found\" should look like");
         } else {
-            //gdb.getGlobalResourceInfo();
+            assertEquals(gdb.getGlobalResourceInfo(),actual);
         }
     }
+
+    /**
+     * I had to do some trickery to parse the JSON returned by this function. Things below the level of 'perf' in the
+     * returned JSON object were coming back as a single string. This caused JSONPath to throw a ClassCastException.
+     * @param region
+     * @param agent
+     * @throws ParseException
+     */
+    @ParameterizedTest
+    @MethodSource("getRegionAgentPairs")
+    void getAgentResourceInfo_test(String region, String agent) {
+        String actual = gdb.gdb.stringUncompress(gdb.getAgentResourceInfo(region, agent));
+        System.out.println(actual);
+        List<String>perf_categories = Arrays.asList(new String[]{"disk","os","mem","part","cpu","net","fs"});
+        boolean regionExists = region != null && region_contents.containsKey(region);
+        boolean agentExists = region != null && agent != null && region_contents.get(region).containsKey(agent);
+        if(regionExists && agentExists){
+            //NMS the following trickery is necessary to get a clean JSON object back. For whatever reason perfs_str
+            //really is a string.
+            String perfs_str = JsonPath.read(actual,"$.agentresourceinfo[0].perf");
+            Map<String,List<Map<String,String>>> perfs = JsonPath.read(perfs_str,"$");
+            //NMS The values for these counters will be different if I create a new dataset, and perhaps different ones
+            //will be available depending on which system. Thus, I only check for the existence of certain keys.
+            for(String cat : perf_categories){
+                assertTrue(perfs.containsKey(cat));
+                for(Map<String,String> perf_obj : perfs.get(cat)){
+                    for(String key:perf_obj.keySet()){
+                        //System.out.println(key);
+                        assertNotNull(perf_obj.get(key));
+                    }
+                }
+            }
+        } else {
+            fail(NOT_FOUND);
+        }
+    }
+
+    /**
+     * This test does a little more thorough check on the results compared to getAgentResourceInfo_test() since
+     * there aren't as many values to sort through and they're all numeric.
+     * @param region
+     */
+    @ParameterizedTest
+    @MethodSource("getRegions")
+    void getRegionResourceInfo_test(String region) {
+        String actual = gdb.gdb.stringUncompress(gdb.getRegionResourceInfo(region));
+        System.out.println(actual);
+        boolean regionExists = region != null && region_contents.containsKey(region);
+        if(regionExists) {
+            Map<String, String> region_resource_info = JsonPath.read(actual, "$.regionresourceinfo[0]");
+            for (String category : categories) {
+                assertTrue(Long.valueOf(region_resource_info.get(category)) > 0L);
+            }
+        } else {
+            fail(NOT_FOUND);
+        }
+    }
+
+    @RepeatedTest(REPEAT_COUNT)
+    void getGlobalResourceInfo_test(){
+        String actual = gdb.gdb.stringUncompress(gdb.getGlobalResourceInfo());
+        System.out.println(actual);
+        Map<String,String> global_resource_info = JsonPath.read(actual,"$.globalresourceinfo[0]");
+        for(String category : categories){
+            assertTrue(Long.valueOf(global_resource_info.get(category)) > 0L );
+        }
+    }
+
+
 /*
     @org.junit.jupiter.api.Test
     void getGPipeline() {

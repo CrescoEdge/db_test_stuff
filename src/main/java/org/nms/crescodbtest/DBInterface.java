@@ -681,7 +681,7 @@ public class DBInterface {
     }
 
 
-    private String getGlobalResourceInfo() {
+    public String getGlobalResourceInfo() {
         String queryReturn = null;
 
         Map<String,List<Map<String,String>>> queryMap;
@@ -756,7 +756,7 @@ public class DBInterface {
         return queryReturn;
 
     }
-    private String getRegionResourceInfo(String actionRegion) {
+    public String getRegionResourceInfo(String actionRegion) {
         String queryReturn = null;
 
         Map<String,List<Map<String,String>>> queryMap;
@@ -831,7 +831,7 @@ public class DBInterface {
         return queryReturn;
 
     }
-    private String getAgentResourceInfo(String actionRegion, String actionAgent) {
+    public String getAgentResourceInfo(String actionRegion, String actionAgent) {
         String queryReturn = null;
 
         Map<String,List<Map<String,String>>> queryMap;
