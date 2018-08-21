@@ -22,6 +22,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.json.simple.parser.*;
+import org.junit.jupiter.params.provider.ValueSource;
 import testhelpers.ControllerEngine;
 import testhelpers.CrescoHelpers;
 import testhelpers.GDBConf;
@@ -119,6 +120,28 @@ class DBInterfaceTest {
         }
         ret.add(Arguments.of(null,null));
         return ret;
+    }
+
+    Stream<String> getResourceids(){
+        return Stream.of("sysinfo_resource","netdiscovery_resource","container_resource","controllerinfo_resource","",null);
+    }
+
+    Stream<String> getInodeids(){
+        return Stream.of("sysinfo_inode","netdiscovery_inode","container_inode","controllerinfo_inode","",null);
+    }
+
+    Stream<Boolean> getBooleans(){
+        return Stream.of(true,false,null);
+    }
+
+    Stream<Arguments> getResourceidInodeidIsResourceMetricTriples(){
+        return getResourceids().flatMap( (resource)->
+                    getInodeids().flatMap( (inode) ->
+                        getBooleans().map( (bool) ->
+                                Arguments.of(resource,inode,bool)
+                                )
+                        )
+                );
     }
 
     @org.junit.jupiter.api.BeforeAll
@@ -519,7 +542,7 @@ class DBInterfaceTest {
 
     /**
      * This test does a little more thorough check on the results compared to getAgentResourceInfo_test() since
-     * there aren't as many values to sort through and they're all numeric.
+     * there aren't as many values to sort through and they're all numeric. Returns a compressed+encoded string.
      * @param region
      */
     @ParameterizedTest
@@ -537,7 +560,9 @@ class DBInterfaceTest {
             fail(NOT_FOUND);
         }
     }
-
+    /**
+     * This one is similar to the case for regions and agents. Returns a compressed+encoded string!
+     */
     @RepeatedTest(REPEAT_COUNT)
     void getGlobalResourceInfo_test(){
         String actual = gdb.gdb.stringUncompress(gdb.getGlobalResourceInfo());
@@ -550,25 +575,69 @@ class DBInterfaceTest {
 
 
 /*
-    @org.junit.jupiter.api.Test
+    @Test
     void getGPipeline() {
     }
+
 
     @org.junit.jupiter.api.Test
     void getGPipelineExport() {
     }
+*/
 
-    @org.junit.jupiter.api.Test
-    void getIsAssignedInfo() {
+    /**
+     * This method returns a compressed+encoded string like {@link getGlobalResourceInfo_test()}
+     * Please remember that this is not a good test. It is only here to check that
+     * whatever changes we make will still give us the original output, which might
+     * not even be desirable if the changes are big.
+     *
+     * @param resourceid
+     * @param inodeid
+     * @param isResourceMetric
+     */
+    @ParameterizedTest
+    @MethodSource("getResourceidInodeidIsResourceMetricTriples")
+    void getIsAssignedInfo_test(String resourceid, String inodeid, boolean isResourceMetric) {
+        String actual = gdb.gdb.stringUncompress(gdb.getIsAssignedInfo(resourceid, inodeid, isResourceMetric));
+        String expected = "{\"routepath-agent_smith\":\"17391\",\"agent\":\"agent_smith\"," +
+        "\"agentcontroller\":\"plugin/0\"," +
+        "\"resource_id\":\"sysinfo_resource\"," +
+        "\"routepath-gc_agent\":\"29039\"," +
+        "\"inode_id\":\"sysinfo_inode\"," +
+        "\"region\":\"different_test_region\"," +
+        "\"perf\":\"H4sIAAAAAAAAAN1VUW/bNhD+K4KfWiCySYqkRD9ty+ZuQDMUW" +
+        "/NQtHmgJdohIokCRTl1i/z33TGS4yT1kL7GNmD77nh33933Ud9nle1vZsvP3" +
+        "+OP9NbbYNb7YPrZclZQkskiIzmbnR250cUYK2g2mXv7zaBRSCKJoDwjfHI1rjI1+C7bm9bdtpPZG11NZUTGcpqpgpPJ2+oG8y0qs1u0u8aQlk6u4HXbb4wPNoYUWa7kcVJMSDMismJ2d3YaFCO8eAYqKyT7ASjOcyZpDg3+DCgmSS5o8TC7Y1BVk5ITiBgcoc8hsYJD/R9DIs+QkCcgKGEZp4Tm8icgUKokyU71f2oj/GnrXMzurs5mro8s6/d92uh22OgyDN54CHj39+XivW2Hr3Cy8640fZ+WbmgDTgNseGToxvRKFYUajRvd2HoPxl/rzrYmmZKgz8WFzos5SdaDrauEz6mYkzQj6da0xtsydtWYJrYF387v0+CCxqlQKQtZEK5UbOBWdw8uHCXQvCCTZ+hNNc58TKN32tZ6XWPDOeVSiJwDu7Fgp32IFfHHtB4BjMyJolgs2psR/vR/nP2ohY5Odls9kQm4kCPHyZkQAuTKUZ0vzM9O52cRRdkNEQR8p7Xb2lLXh5UhAdDeD02jPa7nrzaY+s0/b5Nz582bjxdvE5un+adcJOcfLpNfEjrPyLs/v43nWlsaSKrjTOdktHbX+/5RGTaVgWWP0WKOmra95GuLIcEPZoyCHfkpjMkYh2Zb1YdaMp/zg9nEGrFxyZNVJFoikwtUTUI5S/4NpgPSbRN1OINEXJ3T1W+rFQF6EPmHisNqzbTx8saEPu3vkysep3xv86Y0dhd5lGXosFDag0jMtBsTrnEWtW1B1Z2JoRRuMZFLAi8kny5xZGzJ2ZLoJSHxE5N1O5nqqvIgrSjtz1cYHwbMIeJhCOGPQ75A+jm++ZcZhhvvnQdhDWEk+2iw7fg/3hsTOg4yfTAewcsFF3jHop77oJsu9pBlikqqlFD3t8Xm/rbYuXqI6N3O+Frv4dx0DeE1Y/rSW7gZHLZwgcRIPjiYHPgOEoRhwRRx7URxJeGpJSSuP+y7x4mjwB+iueJEsEyx+HyZBINlhyHuOgrt0GAUSaO7zvjFsIbgIU1329Q7F46a/t+gx3DeO2B78js+nV+OxnwN/MVQ9NbEUb0WPCaUC6Cvq3fz0rWbV4bs2vUhNvf6YPXHmK7u/gOureT1lAoAAA\\u003d\\u003d\",\"routepath-rc_agent\":\"20975\"}";
+        if(resourceid.equals("sysinfo_resource")
+                && inodeid.equals("sysinfo_inode")
+        && !isResourceMetric){
+            assertEquals(expected,actual);
+        } else {
+            fail(NOT_FOUND);
+        }
     }
 
-    @org.junit.jupiter.api.Test
-    void getPipelineInfo() {
+    Stream<String> getPipelineId(){
+        return Stream.of("",null);
     }
 
-    @org.junit.jupiter.api.Test
-    void getResourceTotal2() {
+    /**
+     * This method returns a compressed+encoded string. There are no pipeline
+     * records in the testdb, so this test only checks for
+     * problems with null or "not found" args. The application-level stuff
+     * will probably live on in another place, so I will defer writing proper
+     * tests for that stuff until I'm working on that part.
+     * @param pipeline_action
+     */
+    @ParameterizedTest
+    @MethodSource("getPipelineId")
+    void getPipelineInfo_test(String pipeline_action) {
+        String actual = gdb.gdb.stringUncompress(gdb.getPipelineInfo(pipeline_action));
+        System.out.println(actual);
+        fail(NOT_FOUND);
     }
+
+  /*
 
     @org.junit.jupiter.api.Test
     void getEdgeHealthStatus() {
