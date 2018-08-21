@@ -15,6 +15,7 @@ import javax.xml.bind.DatatypeConverter;
 import com.jayway.jsonpath.JsonPath;
 import com.orientechnologies.orient.core.db.document.ODatabaseDocumentTx;
 import io.cresco.agent.controller.globalscheduler.pNode;
+import io.cresco.library.messaging.MsgEvent;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.junit.jupiter.api.*;
@@ -64,19 +65,28 @@ class DBInterfaceTest {
 
     private static final int REPEAT_COUNT = 5;
 
-    static List<Arguments> getRegionAgentPluginidTriples(){
-        List<Arguments> ret = new ArrayList<>();
+    Stream<Arguments> getRegionAgentPluginidTriples(){
+        /*List<Arguments> ret = new ArrayList<>();
         for(String region:regions){
             for(String agent:agents){
                 for(String pluginid:pluginids){
                     ret.add(Arguments.of(region,agent,pluginid));
                 }
             }
-        }
-        return ret;
+        }*/
+        return regions.stream().flatMap( (region) ->
+                agents.stream().flatMap( (agent) ->
+                        pluginids.stream().map( (pluginid) ->
+                                Arguments.of(region,agent,pluginid)
+                        )
+                )
+        );
+
+
     }
 
-    static Stream<Arguments> getRegionAgentPairs(){
+
+    Stream<Arguments> getRegionAgentPairs(){
         return regions.stream().flatMap( (r)->
                         agents.stream().map( (a) ->
                                 Arguments.of(r,a)
@@ -100,7 +110,7 @@ class DBInterfaceTest {
         return jarfiles.stream();
     }
 
-    static List<Arguments> getPluginTypeIdValuePairs(){
+    List<Arguments> getPluginTypeIdValuePairs(){
         /*Values pulled from test db using following query:
           select indexes.name
           from (select indexes from metadata:indexmanager unwind indexes)
@@ -111,15 +121,18 @@ class DBInterfaceTest {
             ret.add(Arguments.of("pluginname",pname));
         }
 
-        for(Arguments argset : getRegionAgentPluginidTriples()){
-            ret.add(Arguments.of("nodePath",String.format("[\"%s\",\"%s\",\"%s\"]",argset.get())));
-
-        }
+        getRegionAgentPluginidTriples().forEach( (argset) ->
+                ret.add(Arguments.of("nodePath",String.format("[\"%s\",\"%s\",\"%s\"]",argset.get())))
+        );
         for(String jar : jarfiles){
             ret.add(Arguments.of("jarfile",jar));
         }
         ret.add(Arguments.of(null,null));
         return ret;
+    }
+
+    Stream<String> getPipelineId(){
+        return Stream.of("",null);
     }
 
     Stream<String> getResourceids(){
@@ -142,6 +155,23 @@ class DBInterfaceTest {
                                 )
                         )
                 );
+    }
+
+    Stream<Arguments> getRegionAgentPluginidBooleanQuads(){
+        return getRegionAgentPluginidTriples().flatMap( (rap_args)->
+            getBooleans().map( (bools) ->
+                    Arguments.of(rap_args,bools)
+                    )
+        );
+
+    }
+
+    boolean regionExists(String region){
+        return region != null && region_contents.containsKey(region);
+    }
+
+    boolean agentExists(String region, String agent){
+        return agent != null && region_contents.get(region).containsKey(agent);
     }
 
     @org.junit.jupiter.api.BeforeAll
@@ -517,9 +547,9 @@ class DBInterfaceTest {
         String actual = gdb.gdb.stringUncompress(gdb.getAgentResourceInfo(region, agent));
         System.out.println(actual);
         List<String>perf_categories = Arrays.asList(new String[]{"disk","os","mem","part","cpu","net","fs"});
-        boolean regionExists = region != null && region_contents.containsKey(region);
-        boolean agentExists = region != null && agent != null && region_contents.get(region).containsKey(agent);
-        if(regionExists && agentExists){
+        //boolean regionExists = region != null && region_contents.containsKey(region);
+        //boolean agentExists = region != null && agent != null && region_contents.get(region).containsKey(agent);
+        if(regionExists(region) && agentExists(region,agent)){
             //NMS the following trickery is necessary to get a clean JSON object back. For whatever reason perfs_str
             //really is a string.
             String perfs_str = JsonPath.read(actual,"$.agentresourceinfo[0].perf");
@@ -550,8 +580,8 @@ class DBInterfaceTest {
     void getRegionResourceInfo_test(String region) {
         String actual = gdb.gdb.stringUncompress(gdb.getRegionResourceInfo(region));
         System.out.println(actual);
-        boolean regionExists = region != null && region_contents.containsKey(region);
-        if(regionExists) {
+        //boolean regionExists = region != null && region_contents.containsKey(region);
+        if(regionExists(region)) {
             Map<String, String> region_resource_info = JsonPath.read(actual, "$.regionresourceinfo[0]");
             for (String category : categories) {
                 assertTrue(Long.valueOf(region_resource_info.get(category)) > 0L);
@@ -574,19 +604,34 @@ class DBInterfaceTest {
     }
 
 
-/*
-    @Test
-    void getGPipeline() {
+    /**
+     * There are no pipeline records in test db so this does little else besides
+     * check behavior when the input is not found or null.
+     * @param pipelineid
+     */
+    @ParameterizedTest
+    @MethodSource("getPipelineId")
+    void getGPipeline_test(String pipelineid) {
+        String actual = gdb.getGPipeline(pipelineid);
+        System.out.println(actual);
+        fail(NOT_FOUND);
     }
-
-
-    @org.junit.jupiter.api.Test
-    void getGPipelineExport() {
-    }
-*/
 
     /**
-     * This method returns a compressed+encoded string like {@link getGlobalResourceInfo_test()}
+     * Returns compressed+encoded string!
+     * @param pipelineid
+     */
+    @ParameterizedTest
+    @MethodSource("getPipelineId")
+    void getGPipelineExport(String pipelineid) {
+        String actual = gdb.gdb.stringUncompress(gdb.getGPipelineExport(pipelineid));
+        System.out.println(actual);
+        fail(NOT_FOUND);
+    }
+
+
+    /**
+     * This method returns a compressed+encoded string.
      * Please remember that this is not a good test. It is only here to check that
      * whatever changes we make will still give us the original output, which might
      * not even be desirable if the changes are big.
@@ -617,9 +662,7 @@ class DBInterfaceTest {
         }
     }
 
-    Stream<String> getPipelineId(){
-        return Stream.of("",null);
-    }
+
 
     /**
      * This method returns a compressed+encoded string. There are no pipeline
@@ -637,30 +680,115 @@ class DBInterfaceTest {
         fail(NOT_FOUND);
     }
 
-  /*
-
-    @org.junit.jupiter.api.Test
-    void getEdgeHealthStatus() {
+    /**
+     * This method returns something closely coupled with the underlying database (record IDs).
+     * In the implementation, plugin is only checked for null or not null, so all non-null values
+     * for argument "plugin" should be interchangable. Perhaps the method signature should change?
+     * Also, there are only two calls to this method in the controller package.
+     * Perhaps it could be simplified? A better test should be written after changing the public API.
+     * @param region
+     * @param agent
+     * @param plugin
+     */
+    @ParameterizedTest
+    @MethodSource("getRegionAgentPluginidTriples")
+    void getEdgeHealthStatus_test(String region, String agent, String plugin) {
+        Map<String, NodeStatusType> actual = gdb.getEdgeHealthStatus(region, agent, plugin);
+        System.out.println(actual.toString());
+        //boolean regionExists = region != null && region_contents.containsKey(region);
+        //boolean agentExists = agent != null && region_contents.get(region).containsKey(agent);
+        if(regionExists(region) && agentExists(region,agent) && plugin == null){
+            assertFalse(actual.isEmpty());
+        }
+        else if(regionExists(region) && agent == null && plugin == null){
+            assertFalse(actual.isEmpty());
+        }
+        else if (region == null && agent == null && plugin == null){
+            assertFalse(actual.isEmpty());
+        }
+        else {assertTrue(actual.isEmpty());}
     }
 
-    @org.junit.jupiter.api.Test
-    void getNodeStatus() {
+    /**
+     * This test is exactly the same as {@link getEdgeHealthStatus_test(String, String, String)}
+     * It should be replaced by a better, more specific test.
+     * @param region
+     * @param agent
+     * @param plugin
+     */
+    @ParameterizedTest
+    @MethodSource("getRegionAgentPluginidTriples")
+    void getNodeStatus_test(String region, String agent, String plugin) {
+        Map<String, NodeStatusType> actual = gdb.getNodeStatus(region, agent, plugin);
+        System.out.println(actual.toString());
+        if(regionExists(region) && agentExists(region,agent) && plugin == null){
+            assertFalse(actual.isEmpty());
+        }
+        else if(regionExists(region) && agent == null && plugin == null){
+            assertFalse(actual.isEmpty());
+        }
+        else if (region == null && agent == null && plugin == null){
+            assertFalse(actual.isEmpty());
+        }
+        else {assertTrue(actual.isEmpty());}
     }
 
-    @org.junit.jupiter.api.Test
-    void addNode() {
+    MsgEvent getMsgEvent(String region, String agent, String plugin){
+        MsgEvent de = new MsgEvent();
+        de.setParams(new HashMap<>());
+        if(region != null){de.setParam("region_name",region);}
+        if(agent != null){de.setParam("agent_name",agent);}
+        if(plugin != null){de.setParam("plugin_id",plugin);}
+        return de;
     }
 
-    @org.junit.jupiter.api.Test
-    void watchDogUpdate() {
+    Stream<MsgEvent> getWatchDogMsgEvent() {
+        return regions.stream().flatMap( (region) ->
+                    agents.stream().flatMap( (agent) ->
+                        pluginids.stream().map( (plugin) ->
+                                getMsgEvent(region, agent, plugin)
+                        )
+                )
+        );
     }
 
-    @org.junit.jupiter.api.Test
-    void removeNode() {
+    void printMsgEventParams(MsgEvent m){
+        m.getParams().keySet().stream().forEach((param) ->
+                        System.out.println(param+":"+m.getParam(param))
+                );
+    }
+    @ParameterizedTest
+    @MethodSource("getWatchDogMsgEvent")
+    void watchDogUpdate_test(MsgEvent de){
+        printMsgEventParams(de);
+
     }
 
-    @org.junit.jupiter.api.Test
-    void removeNode1() {
+    /**
+     * This method appears to be tightly coupled to the underlying database.
+     * It may not be relevant after the rewrite.
+     */
+    @Test
+    void addNode_test() {
+        fail("To be removed");
     }
-    */
+
+    /**
+     * This method appears to be tightly coupled to the underlying database.
+     * It may not be relevant after the rewrite.
+     */
+    @Test
+    void removeNode_test() {
+        fail("To be removed");
+    }
+
+    /**
+     * This method appears to be tightly coupled to the underlying database.
+     * It may not be relevant after the rewrite.
+     */
+    @Test
+    void removeNode1_test() {
+        fail("To be removed");
+    }
+
 }
