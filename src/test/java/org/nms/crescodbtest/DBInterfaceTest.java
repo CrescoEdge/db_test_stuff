@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.xml.bind.DatatypeConverter;
@@ -32,6 +33,21 @@ import testhelpers.OrientHelpers;
 
 
 import static org.junit.jupiter.api.Assertions.*;
+class MsgEvent4Test extends io.cresco.library.messaging.MsgEvent {
+    private MsgEvent m;
+    public MsgEvent4Test(MsgEvent m){
+        this.m = m;
+    }
+    public String toString(){
+       return m.getParams().keySet()
+               .stream()
+               .map((param) -> param+":"+m.getParam(param))
+               .collect(Collectors.joining("|"));
+    }
+    public MsgEvent getMsgEvent(){
+        return this.m;
+    }
+}
 
 @org.junit.jupiter.api.TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class DBInterfaceTest {
@@ -171,9 +187,12 @@ class DBInterfaceTest {
     }
 
     boolean agentExists(String region, String agent){
-        return agent != null && region_contents.get(region).containsKey(agent);
+        return agent != null && regionExists(region) && region_contents.get(region).containsKey(agent);
     }
 
+    boolean pluginExist(String region, String agent, String plugin){
+        return plugin!= null && agentExists(region,agent) && region_contents.get(region).get(agent).containsKey(plugin);
+    }
     @org.junit.jupiter.api.BeforeAll
     void init_model_db() {
         Map<String,String> plugins_reg_agents = new HashMap<>();
@@ -732,7 +751,7 @@ class DBInterfaceTest {
         }
         else {assertTrue(actual.isEmpty());}
     }
-
+    /*
     MsgEvent getMsgEvent(String region, String agent, String plugin){
         MsgEvent de = new MsgEvent();
         de.setParams(new HashMap<>());
@@ -742,11 +761,11 @@ class DBInterfaceTest {
         return de;
     }
 
-    Stream<MsgEvent> getWatchDogMsgEvent() {
+    Stream<MsgEvent4Test> getWatchDogMsgEvent() {
         return regions.stream().flatMap( (region) ->
                     agents.stream().flatMap( (agent) ->
                         pluginids.stream().map( (plugin) ->
-                                getMsgEvent(region, agent, plugin)
+                                new MsgEvent4Test(getMsgEvent(region, agent, plugin))
                         )
                 )
         );
@@ -759,10 +778,58 @@ class DBInterfaceTest {
     }
     @ParameterizedTest
     @MethodSource("getWatchDogMsgEvent")
-    void watchDogUpdate_test(MsgEvent de){
-        printMsgEventParams(de);
+    void watchDogUpdate_test(MsgEvent4Test m){
+        MsgEvent de = m.getMsgEvent();
+        String region = de.getParam("region_name");
+        String agent = de.getParam("agent_name");
+        String pluginid = de.getParam("plugin_id");
+
+        Boolean upd = gdb.watchDogUpdate(de);
+
+        if(pluginExist(region,agent,pluginid)){
+            //assertTrue(upd);
+            String mynode = gdb.gdb.getNodeId(region,agent,pluginid);
+            //assertNotEquals("",mynode);
+            //assertNotNull(mynode);
+            Map<String,String> nodeparams = gdb.gdb.getNodeParamsNoTx(mynode);
+            List<String> tofind = Arrays.asList(new String[]{"watchdogtimer","watchdog_ts","is_active","enable_pending"});
+            //tofind.addAll(de.getParams().keySet());
+            //assertTrue(nodeparams.keySet().containsAll(tofind));
+            System.out.println(nodeparams);
+            fail("We want it to fail!");
+            assertEquals(nodeparams.get("agent"),agent);
+            assertEquals(nodeparams.get("agentcontroller"),pluginid);
+            assertEquals(nodeparams.get("region"),region);
+
+
+            "{agent=gc_agent, status_code=10, agentcontroller=plugin/1, " +
+                    "pluginname=io.cresco.dashboard, status_dest=Plugin " +
+                    "Active, jarfile=dashboard-1.0-SNAPSHOT.jar, " +
+                    "pluginid=plugin/1, isactive=true, region=global_region, " +
+                    "configparams={\"pluginname\":\"io.cresco.dashboard\"," +
+                    "\"jarfile\":\"dashboard-1.0-SNAPSHOT.jar\"}}"
+
+                    ;
+                                    updateMap.put("watchdogtimer", interval);
+                updateMap.put("watchdog_ts", String.valueOf(System.currentTimeMillis()));
+                updateMap.put("is_active", Boolean.TRUE.toString());
+                updateMap.put("enable_pending", Boolean.FALSE.toString());
+
+        }
+        Check for:
+        nodeid null,not null
 
     }
+  */
+
+    /**
+     *This method appears to be tightly coupled to the underlying database.
+     * It may not be relevant after the rewrite.
+     * Right now I plan to push most of the stuff in this method down to
+     * the implementation. I attempted to come up with a decent test that
+     * isn't wholly dependent on the underlying db implementation but it was
+     * taking me too long for little apparent benefit.
+     */
 
     /**
      * This method appears to be tightly coupled to the underlying database.
